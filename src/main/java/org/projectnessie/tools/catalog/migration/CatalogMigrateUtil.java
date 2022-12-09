@@ -18,12 +18,12 @@ package org.projectnessie.tools.catalog.migration;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.TableOperations;
@@ -116,6 +116,8 @@ public class CatalogMigrateUtil {
           PrintWriter printWriter) {
     validate(sourceCatalog, targetCatalog, maxThreadPoolSize);
 
+    String operation = deleteEntriesFromSourceCatalog ? "migration" : "registration";
+
     List<TableIdentifier> identifiers;
     if (tableIdentifiers == null || tableIdentifiers.isEmpty()) {
       printWriter.println(
@@ -129,17 +131,15 @@ public class CatalogMigrateUtil {
               ? ((SupportsNamespaces) sourceCatalog).listNamespaces()
               : ImmutableList.of(Namespace.empty());
       printWriter.println("Collecting all the tables from all the namespaces of source catalog...");
-      identifiers =
-          namespaces.stream()
-              .flatMap(namespace -> sourceCatalog.listTables(namespace).stream())
-              .collect(Collectors.toList());
+
+      identifiers = getTableIdentifiers(sourceCatalog, maxThreadPoolSize, namespaces);
     } else {
       identifiers = tableIdentifiers;
     }
 
-    printWriter.printf("\nIdentified %d tables for migration.", identifiers.size());
+    printWriter.printf("\nIdentified %d tables for %s.", identifiers.size(), operation);
 
-    printWriter.println("\nStarted migration ...");
+    printWriter.printf("\nStarted %s ...", operation);
 
     ExecutorService executorService = null;
     if (maxThreadPoolSize > 0) {
@@ -169,8 +169,30 @@ public class CatalogMigrateUtil {
                 LOG.info("Successfully migrated the table {}", tableIdentifier);
               });
 
-      printWriter.println("Finished migration ...");
+      printWriter.printf("\nFinished %s ...", operation);
       return ImmutablePair.of(migratedTableIdentifiers, failedToMigrateTableIdentifiers);
+    } finally {
+      if (executorService != null) {
+        executorService.shutdown();
+      }
+    }
+  }
+
+  private static List<TableIdentifier> getTableIdentifiers(
+      Catalog sourceCatalog, int maxThreadPoolSize, List<Namespace> namespaces) {
+    ExecutorService executorService = null;
+    if (maxThreadPoolSize > 0) {
+      executorService = ThreadPools.newWorkerPool("list-tables", maxThreadPoolSize);
+    }
+
+    try {
+      Collection<TableIdentifier> allIdentifiers = new ConcurrentLinkedQueue<>();
+      Tasks.foreach(namespaces.stream().filter(Objects::nonNull))
+          .retry(1)
+          .suppressFailureWhenFinished()
+          .executeWith(executorService)
+          .run(namespace -> allIdentifiers.addAll(sourceCatalog.listTables(namespace)));
+      return new ArrayList<>(allIdentifiers);
     } finally {
       if (executorService != null) {
         executorService.shutdown();

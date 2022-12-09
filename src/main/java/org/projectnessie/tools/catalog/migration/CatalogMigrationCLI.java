@@ -181,7 +181,7 @@ public class CatalogMigrationCLI implements Callable<Integer> {
     }
 
     printWriter.println("\nSummary: ");
-    if (result.left.size() > 0) {
+    if (!result.left.isEmpty()) {
       printWriter.printf(
           "- Successfully %s %d tables from %s catalog to %s catalog. \n",
           deleteSourceCatalogTables ? "migrated" : "registered",
@@ -189,7 +189,7 @@ public class CatalogMigrationCLI implements Callable<Integer> {
           sourceCatalogType.name(),
           targetCatalogType.name());
     }
-    if (result.right.size() > 0) {
+    if (!result.right.isEmpty()) {
       printWriter.printf(
           "- Failed to %s %d tables from %s catalog to %s catalog. "
               + "Please check the `catalog_migration.log` file for more details. "
@@ -200,15 +200,15 @@ public class CatalogMigrationCLI implements Callable<Integer> {
           targetCatalogType.name());
     }
     printWriter.println("\nDetails: ");
-    if (result.left.size() > 0) {
+    if (!result.left.isEmpty()) {
       printWriter.printf(
-          "\n- Successfully %s these tables: \n",
+          "- Successfully %s these tables: \n",
           deleteSourceCatalogTables ? "migrated" : "registered");
       printWriter.println(result.left);
     }
-    if (result.right.size() > 0) {
+    if (!result.right.isEmpty()) {
       printWriter.printf(
-          "\n- Failed to %s these tables: \n", deleteSourceCatalogTables ? "migrate" : "register");
+          "- Failed to %s these tables: \n", deleteSourceCatalogTables ? "migrate" : "register");
       printWriter.println(result.right);
     }
 
