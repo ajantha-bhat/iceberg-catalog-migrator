@@ -29,6 +29,7 @@ import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.hadoop.HadoopCatalog;
@@ -125,7 +126,10 @@ public class CatalogMigrateUtil {
       Collection<TableIdentifier> migratedTableIdentifiers = new ConcurrentLinkedQueue<>();
       Tasks.foreach(identifiers.stream().filter(Objects::nonNull))
           .retry(3)
-          .stopRetryOn(NoSuchTableException.class, NoSuchNamespaceException.class)
+          .stopRetryOn(
+              NoSuchTableException.class,
+              NoSuchNamespaceException.class,
+              AlreadyExistsException.class)
           .suppressFailureWhenFinished()
           .executeWith(executorService)
           .onFailure(
