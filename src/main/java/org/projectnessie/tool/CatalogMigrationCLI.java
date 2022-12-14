@@ -18,24 +18,11 @@ package org.projectnessie.tool;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.iceberg.CatalogUtil;
-import org.apache.iceberg.aws.dynamodb.DynamoDbCatalog;
-import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.dell.ecs.EcsCatalog;
-import org.apache.iceberg.hadoop.HadoopCatalog;
-import org.apache.iceberg.hive.HiveCatalog;
-import org.apache.iceberg.jdbc.JdbcCatalog;
-import org.apache.iceberg.nessie.NessieCatalog;
-import org.apache.iceberg.rest.RESTCatalog;
 import picocli.CommandLine;
 
 @CommandLine.Command(
@@ -47,23 +34,10 @@ import picocli.CommandLine;
     // of sorted.
     sortOptions = false,
     description =
-        "\nBulk register the iceberg tables from source catalog to target catalog without data copy.\n")
+        "\nBulk register the iceberg tables from source catalog to target catalog without data copy.\n",
+    subcommands = {SourceCatalog.class, TargetCatalog.class})
 public class CatalogMigrationCLI implements Callable<Integer> {
   @CommandLine.Spec CommandLine.Model.CommandSpec commandSpec;
-
-  @CommandLine.Option(
-      names = "--source-catalog-hadoop-conf",
-      split = ",",
-      description =
-          "optional source catalog Hadoop configuration, required when using an Iceberg FileIO.")
-  Map<String, String> sourceHadoopConf = new HashMap<>();
-
-  @CommandLine.Option(
-      names = "--target-catalog-hadoop-conf",
-      split = ",",
-      description =
-          "optional target catalog Hadoop configuration, required when using an Iceberg FileIO.")
-  Map<String, String> targetHadoopConf = new HashMap<>();
 
   @CommandLine.Option(
       names = {"-I", "--identifiers"},
@@ -81,45 +55,11 @@ public class CatalogMigrationCLI implements Callable<Integer> {
   int maxThreadPoolSize;
 
   @CommandLine.Option(
-      names = {"--source-custom-catalog-impl"},
-      description =
-          "optional fully qualified class name of the custom catalog implementation of the source catalog. Required "
-              + "when the catalog type is CUSTOM.")
-  String sourceCustomCatalogImpl;
-
-  @CommandLine.Option(
-      names = {"--target-custom-catalog-impl"},
-      description =
-          "optional fully qualified class name of the custom catalog implementation of the target catalog. Required "
-              + "when the catalog type is CUSTOM.")
-  String targetCustomCatalogImpl;
-
-  @CommandLine.Option(
       names = {"--delete-source-tables"},
       description =
           "Optional configuration to delete the tables entry from source catalog after successfully registering it "
               + "to target catalog.")
   private boolean deleteSourceCatalogTables;
-
-  @CommandLine.Parameters(
-      index = "0",
-      description =
-          "source catalog type. "
-              + "Can be one of these [CUSTOM, DYNAMODB, ECS, GLUE, HADOOP, HIVE, JDBC, NESSIE, REST]")
-  private CatalogType sourceCatalogType;
-
-  @CommandLine.Parameters(index = "1", split = ",", description = "source catalog properties")
-  private Map<String, String> sourceCatalogProperties;
-
-  @CommandLine.Parameters(
-      index = "2",
-      description =
-          "target catalog type. "
-              + "Can be one of these [CUSTOM, DYNAMODB, ECS, GLUE, HADOOP, HIVE, JDBC, NESSIE, REST]")
-  private CatalogType targetCatalogType;
-
-  @CommandLine.Parameters(index = "3", split = ",", description = "target catalog properties")
-  private Map<String, String> targetCatalogProperties;
 
   public static void main(String... args) {
     CommandLine commandLine = new CommandLine(new CatalogMigrationCLI());
@@ -130,28 +70,19 @@ public class CatalogMigrationCLI implements Callable<Integer> {
 
   @Override
   public Integer call() {
-    Configuration sourceCatalogConf = new Configuration();
-    if (sourceHadoopConf != null && !sourceHadoopConf.isEmpty()) {
-      sourceHadoopConf.forEach(sourceCatalogConf::set);
+    SourceCatalog from = commandSpec.subcommands().get("from").getCommand();
+    if (from.catalog() == null) {
+      throw new IllegalArgumentException(
+          "Source catalog is not initialized. Please executes the 'from' command to build the source catalog.");
     }
-    Catalog sourceCatalog =
-        CatalogUtil.loadCatalog(
-            Objects.requireNonNull(catalogImpl(sourceCatalogType, sourceCustomCatalogImpl)),
-            "sourceCatalog",
-            sourceCatalogProperties,
-            sourceCatalogConf);
-
-    Configuration targetCatalogConf = new Configuration();
-    if (targetHadoopConf != null && !targetHadoopConf.isEmpty()) {
-      targetHadoopConf.forEach(targetCatalogConf::set);
+    TargetCatalog to = commandSpec.subcommands().get("to").getCommand();
+    if (to.catalog() == null) {
+      throw new IllegalArgumentException(
+          "Target catalog is not initialized. Please executes the 'to' command to build the target catalog.");
     }
-    Catalog targetCatalog =
-        CatalogUtil.loadCatalog(
-            Objects.requireNonNull(catalogImpl(targetCatalogType, targetCustomCatalogImpl)),
-            "targetCatalog",
-            targetCatalogProperties,
-            targetCatalogConf);
 
+    Catalog sourceCatalog = from.catalog();
+    Catalog targetCatalog = to.catalog();
     List<TableIdentifier> tableIdentifiers =
         identifiers == null
             ? null
@@ -173,39 +104,11 @@ public class CatalogMigrationCLI implements Callable<Integer> {
         "Successfully %s %d tables from %s catalog to %s catalog: \n",
         deleteSourceCatalogTables ? "migrated" : "registered",
         result.size(),
-        sourceCatalogType.name(),
-        targetCatalogType.name());
+        sourceCatalog.name(),
+        targetCatalog.name());
     result.forEach(printWriter::println);
 
     return 0;
-  }
-
-  private String catalogImpl(CatalogType type, String customCatalogImpl) {
-    switch (type) {
-      case CUSTOM:
-        if (customCatalogImpl == null || customCatalogImpl.isEmpty()) {
-          throw new IllegalArgumentException(
-              "Need to specify the fully qualified class name of the custom catalog " + "impl");
-        }
-        return customCatalogImpl;
-      case DYNAMODB:
-        return DynamoDbCatalog.class.getName();
-      case ECS:
-        return EcsCatalog.class.getName();
-      case GLUE:
-        return GlueCatalog.class.getName();
-      case HADOOP:
-        return HadoopCatalog.class.getName();
-      case HIVE:
-        return HiveCatalog.class.getName();
-      case JDBC:
-        return JdbcCatalog.class.getName();
-      case NESSIE:
-        return NessieCatalog.class.getName();
-      case REST:
-        return RESTCatalog.class.getName();
-    }
-    return null;
   }
 
   public enum CatalogType {
