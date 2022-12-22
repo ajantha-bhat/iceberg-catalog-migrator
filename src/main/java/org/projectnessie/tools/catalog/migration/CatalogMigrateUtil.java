@@ -13,16 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.projectnessie.tool;
+package org.projectnessie.tools.catalog.migration;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import java.io.PrintWriter;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.catalog.Catalog;
@@ -59,14 +61,19 @@ public class CatalogMigrateUtil {
    * @param targetCatalog Target {@link Catalog} to which the tables need to be migrated
    * @param maxThreadPoolSize Size of the thread pool used for migrate tables (If set to 0, no
    *     thread pool is used)
-   * @return Collection of table identifiers for successfully migrated tables
+   * @param printWriter to print regular updates on the console.
+   * @return Collection of successfully migrated and collection of failed to migrate table
+   *     identifiers.
    */
-  public static Collection<TableIdentifier> migrateTables(
-      List<TableIdentifier> tableIdentifiers,
-      Catalog sourceCatalog,
-      Catalog targetCatalog,
-      int maxThreadPoolSize) {
-    return migrateTables(tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, true);
+  public static ImmutablePair<Collection<TableIdentifier>, Collection<TableIdentifier>>
+      migrateTables(
+          List<TableIdentifier> tableIdentifiers,
+          Catalog sourceCatalog,
+          Catalog targetCatalog,
+          int maxThreadPoolSize,
+          PrintWriter printWriter) {
+    return migrateTables(
+        tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, true, printWriter);
   }
 
   /**
@@ -84,31 +91,44 @@ public class CatalogMigrateUtil {
    * @param targetCatalog Target {@link Catalog} to which the tables need to be registered
    * @param maxThreadPoolSize Size of the thread pool used for registering tables (If set to 0, no
    *     thread pool is used)
-   * @return Collection of table identifiers for successfully registered tables
+   * @param printWriter to print regular updates on the console.
+   * @return Collection of successfully migrated and collection of failed to migrate table
+   *     identifiers.
    */
-  public static Collection<TableIdentifier> registerTables(
-      List<TableIdentifier> tableIdentifiers,
-      Catalog sourceCatalog,
-      Catalog targetCatalog,
-      int maxThreadPoolSize) {
-    return migrateTables(tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, false);
+  public static ImmutablePair<Collection<TableIdentifier>, Collection<TableIdentifier>>
+      registerTables(
+          List<TableIdentifier> tableIdentifiers,
+          Catalog sourceCatalog,
+          Catalog targetCatalog,
+          int maxThreadPoolSize,
+          PrintWriter printWriter) {
+    return migrateTables(
+        tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, false, printWriter);
   }
 
-  private static Collection<TableIdentifier> migrateTables(
-      List<TableIdentifier> tableIdentifiers,
-      Catalog sourceCatalog,
-      Catalog targetCatalog,
-      int maxThreadPoolSize,
-      boolean deleteEntriesFromSourceCatalog) {
+  private static ImmutablePair<Collection<TableIdentifier>, Collection<TableIdentifier>>
+      migrateTables(
+          List<TableIdentifier> tableIdentifiers,
+          Catalog sourceCatalog,
+          Catalog targetCatalog,
+          int maxThreadPoolSize,
+          boolean deleteEntriesFromSourceCatalog,
+          PrintWriter printWriter) {
     validate(sourceCatalog, targetCatalog, maxThreadPoolSize);
 
     List<TableIdentifier> identifiers;
     if (tableIdentifiers == null || tableIdentifiers.isEmpty()) {
+      printWriter.println(
+          "\nUser has not specified the table identifiers."
+              + " Selecting all the tables from all the namespaces from the source catalog.");
+
+      printWriter.println("Collecting all the namespaces from source catalog...");
       // fetch all the table identifiers from all the namespaces.
       List<Namespace> namespaces =
           (sourceCatalog instanceof SupportsNamespaces)
               ? ((SupportsNamespaces) sourceCatalog).listNamespaces()
               : ImmutableList.of(Namespace.empty());
+      printWriter.println("Collecting all the tables from all the namespaces of source catalog...");
       identifiers =
           namespaces.stream()
               .flatMap(namespace -> sourceCatalog.listTables(namespace).stream())
@@ -117,13 +137,17 @@ public class CatalogMigrateUtil {
       identifiers = tableIdentifiers;
     }
 
+    printWriter.printf("\nIdentified %d tables for migration.", identifiers.size());
+
+    printWriter.println("\nStarted migration ...");
+
     ExecutorService executorService = null;
     if (maxThreadPoolSize > 0) {
       executorService = ThreadPools.newWorkerPool("migrate-tables", maxThreadPoolSize);
     }
-
     try {
       Collection<TableIdentifier> migratedTableIdentifiers = new ConcurrentLinkedQueue<>();
+      Collection<TableIdentifier> failedToMigrateTableIdentifiers = new ConcurrentLinkedQueue<>();
       Tasks.foreach(identifiers.stream().filter(Objects::nonNull))
           .retry(3)
           .stopRetryOn(
@@ -133,15 +157,20 @@ public class CatalogMigrateUtil {
           .suppressFailureWhenFinished()
           .executeWith(executorService)
           .onFailure(
-              (tableIdentifier, exc) ->
-                  LOG.warn("Unable to migrate table {}", tableIdentifier, exc))
+              (tableIdentifier, exc) -> {
+                failedToMigrateTableIdentifiers.add(tableIdentifier);
+                LOG.warn("Unable to migrate table {}", tableIdentifier, exc);
+              })
           .run(
               tableIdentifier -> {
                 migrate(
                     tableIdentifier, sourceCatalog, targetCatalog, deleteEntriesFromSourceCatalog);
                 migratedTableIdentifiers.add(tableIdentifier);
+                LOG.info("Successfully migrated the table {}", tableIdentifier);
               });
-      return migratedTableIdentifiers;
+
+      printWriter.println("Finished migration ...");
+      return ImmutablePair.of(migratedTableIdentifiers, failedToMigrateTableIdentifiers);
     } finally {
       if (executorService != null) {
         executorService.shutdown();

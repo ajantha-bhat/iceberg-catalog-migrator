@@ -18,14 +18,17 @@
 -->
 <configuration debug="true">
   <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator"/>
-  <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+  <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+    <file>catalog_migration.log</file>
+    <append>true</append>
     <encoder>
       <pattern>%date{ISO8601} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
-  <logger name="org.projectnessie.tool" level="${test.log.level:-WARN}"/>
+
+  <logger name="org.projectnessie.tools.catalog.migration" />
   <root>
-    <level value="${test.log.level:-WARN}"/>
-    <appender-ref ref="console"/>
+    <level value="INFO"/>
+    <appender-ref ref="FILE"/>
   </root>
 </configuration>

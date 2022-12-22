@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.projectnessie.tool;
+package org.projectnessie.tools.catalog.migration;
 
 import java.io.InputStream;
 import java.util.Properties;

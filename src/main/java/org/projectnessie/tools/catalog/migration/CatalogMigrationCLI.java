@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.projectnessie.tool;
+package org.projectnessie.tools.catalog.migration;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.aws.dynamodb.DynamoDbCatalog;
@@ -55,14 +56,16 @@ public class CatalogMigrationCLI implements Callable<Integer> {
       names = "--source-catalog-hadoop-conf",
       split = ",",
       description =
-          "optional source catalog Hadoop configuration, required when using an Iceberg FileIO.")
+          "optional source catalog Hadoop configurations (like fs.s3a.secret.key, fs.s3a.access.key) required when "
+              + "using an Iceberg FileIO.")
   Map<String, String> sourceHadoopConf = new HashMap<>();
 
   @CommandLine.Option(
       names = "--target-catalog-hadoop-conf",
       split = ",",
       description =
-          "optional target catalog Hadoop configuration, required when using an Iceberg FileIO.")
+          "optional target catalog Hadoop configurations (like fs.s3a.secret.key, fs.s3a.access.key) required when "
+              + "using an Iceberg FileIO.")
   Map<String, String> targetHadoopConf = new HashMap<>();
 
   @CommandLine.Option(
@@ -130,6 +133,7 @@ public class CatalogMigrationCLI implements Callable<Integer> {
 
   @Override
   public Integer call() {
+    PrintWriter printWriter = commandSpec.commandLine().getOut();
     Configuration sourceCatalogConf = new Configuration();
     if (sourceHadoopConf != null && !sourceHadoopConf.isEmpty()) {
       sourceHadoopConf.forEach(sourceCatalogConf::set);
@@ -140,6 +144,7 @@ public class CatalogMigrationCLI implements Callable<Integer> {
             "sourceCatalog",
             sourceCatalogProperties,
             sourceCatalogConf);
+    printWriter.printf("\nConfigured source catalog: %s\n", sourceCatalogType.name());
 
     Configuration targetCatalogConf = new Configuration();
     if (targetHadoopConf != null && !targetHadoopConf.isEmpty()) {
@@ -151,31 +156,61 @@ public class CatalogMigrationCLI implements Callable<Integer> {
             "targetCatalog",
             targetCatalogProperties,
             targetCatalogConf);
+    printWriter.printf("\nConfigured target catalog: %s\n", targetCatalogType.name());
 
     List<TableIdentifier> tableIdentifiers =
         identifiers == null
             ? null
             : identifiers.stream().map(TableIdentifier::parse).collect(Collectors.toList());
-    Collection<TableIdentifier> result;
+
+    ImmutablePair<Collection<TableIdentifier>, Collection<TableIdentifier>> result;
     if (deleteSourceCatalogTables) {
       result =
           CatalogMigrateUtil.migrateTables(
-              tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize);
+              tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, printWriter);
+      if (sourceCatalogType == CatalogType.HADOOP) {
+        printWriter.println(
+            "\n[WARNING]: Source catalog type is HADOOP and it doesn't support dropping tables just from "
+                + "catalog. \nAvoid operating the migrated tables from the source catalog after migration. "
+                + "Use the tables from target catalog.");
+      }
     } else {
       result =
           CatalogMigrateUtil.registerTables(
-              tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize);
+              tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, printWriter);
     }
 
-    PrintWriter printWriter = commandSpec.commandLine().getOut();
-    printWriter.println("\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> ");
-    printWriter.printf(
-        "Successfully %s %d tables from %s catalog to %s catalog: \n",
-        deleteSourceCatalogTables ? "migrated" : "registered",
-        result.size(),
-        sourceCatalogType.name(),
-        targetCatalogType.name());
-    result.forEach(printWriter::println);
+    printWriter.println("\nSummary: ");
+    if (result.left.size() > 0) {
+      printWriter.printf(
+          "- Successfully %s %d tables from %s catalog to %s catalog. \n",
+          deleteSourceCatalogTables ? "migrated" : "registered",
+          result.left.size(),
+          sourceCatalogType.name(),
+          targetCatalogType.name());
+    }
+    if (result.right.size() > 0) {
+      printWriter.printf(
+          "- Failed to %s %d tables from %s catalog to %s catalog. "
+              + "Please check the `catalog_migration.log` file for more details. "
+              + "Retry if the failure is because of network/connection timeouts.\n",
+          deleteSourceCatalogTables ? "migrate" : "register",
+          result.right.size(),
+          sourceCatalogType.name(),
+          targetCatalogType.name());
+    }
+    printWriter.println("\nDetails: ");
+    if (result.left.size() > 0) {
+      printWriter.printf(
+          "\n- Successfully %s these tables: \n",
+          deleteSourceCatalogTables ? "migrated" : "registered");
+      printWriter.println(result.left);
+    }
+    if (result.right.size() > 0) {
+      printWriter.printf(
+          "\n- Failed to %s these tables: \n", deleteSourceCatalogTables ? "migrate" : "register");
+      printWriter.println(result.right);
+    }
 
     return 0;
   }
@@ -204,8 +239,9 @@ public class CatalogMigrationCLI implements Callable<Integer> {
         return NessieCatalog.class.getName();
       case REST:
         return RESTCatalog.class.getName();
+      default:
+        throw new IllegalArgumentException("Unsupported type: " + type.name());
     }
-    return null;
   }
 
   public enum CatalogType {
