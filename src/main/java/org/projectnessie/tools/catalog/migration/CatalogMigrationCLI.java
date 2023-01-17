@@ -43,7 +43,7 @@ import org.apache.iceberg.rest.RESTCatalog;
 import picocli.CommandLine;
 
 @CommandLine.Command(
-    name = "register",
+    name = "migrate",
     mixinStandardHelpOptions = true,
     versionProvider = CLIVersionProvider.class,
     // As both source and target catalog has similar configurations,
@@ -51,9 +51,24 @@ import picocli.CommandLine;
     // of sorted.
     sortOptions = false,
     description =
-        "\nBulk register the iceberg tables from source catalog to target catalog without data copy.\n")
+        "\nBulk migrate the iceberg tables from source catalog to target catalog without data copy.\n")
 public class CatalogMigrationCLI implements Callable<Integer> {
   @CommandLine.Spec CommandLine.Model.CommandSpec commandSpec;
+
+  @CommandLine.Option(
+      names = "--source-catalog-type",
+      required = true,
+      description =
+          "source catalog type. "
+              + "Can be one of these [CUSTOM, DYNAMODB, ECS, GLUE, HADOOP, HIVE, JDBC, NESSIE, REST]")
+  private CatalogType sourceCatalogType;
+
+  @CommandLine.Option(
+      names = "--source-catalog-properties",
+      required = true,
+      split = ",",
+      description = "source catalog properties")
+  private Map<String, String> sourceCatalogProperties;
 
   @CommandLine.Option(
       names = "--source-catalog-hadoop-conf",
@@ -64,43 +79,34 @@ public class CatalogMigrationCLI implements Callable<Integer> {
   Map<String, String> sourceHadoopConf = new HashMap<>();
 
   @CommandLine.Option(
+      names = {"--source-custom-catalog-impl"},
+      description =
+          "optional fully qualified class name of the custom catalog implementation of the source catalog. Required "
+              + "when the catalog type is CUSTOM.")
+  String sourceCustomCatalogImpl;
+
+  @CommandLine.Option(
+      names = "--target-catalog-type",
+      required = true,
+      description =
+          "target catalog type. "
+              + "Can be one of these [CUSTOM, DYNAMODB, ECS, GLUE, HADOOP, HIVE, JDBC, NESSIE, REST]")
+  private CatalogType targetCatalogType;
+
+  @CommandLine.Option(
+      names = "--target-catalog-properties",
+      required = true,
+      split = ",",
+      description = "target catalog properties")
+  private Map<String, String> targetCatalogProperties;
+
+  @CommandLine.Option(
       names = "--target-catalog-hadoop-conf",
       split = ",",
       description =
           "optional target catalog Hadoop configurations (like fs.s3a.secret.key, fs.s3a.access.key) required when "
               + "using an Iceberg FileIO.")
   Map<String, String> targetHadoopConf = new HashMap<>();
-
-  @CommandLine.Option(
-      names = {"-I", "--identifiers"},
-      split = ",",
-      description =
-          "optional selective list of identifiers to register. If not specified, all the tables will be registered."
-              + "Use this when there are few identifiers needs to be registered. For large number of identifiers, use "
-              + "`--identifiers-from-file` option.")
-  List<String> identifiers = new ArrayList<>();
-
-  @CommandLine.Option(
-      names = {"--identifiers-from-file"},
-      description =
-          "optional text file path that contains list of table identifiers (one per line) to register. Should not be "
-              + "used with `--identifiers` option.")
-  String identifiersFromFile;
-
-  @CommandLine.Option(
-      names = {"-T", "--thread-pool-size"},
-      defaultValue = "0",
-      description =
-          "optional size of the thread pool used for register tables. Tables are migrated sequentially if "
-              + "not specified.")
-  int maxThreadPoolSize;
-
-  @CommandLine.Option(
-      names = {"--source-custom-catalog-impl"},
-      description =
-          "optional fully qualified class name of the custom catalog implementation of the source catalog. Required "
-              + "when the catalog type is CUSTOM.")
-  String sourceCustomCatalogImpl;
 
   @CommandLine.Option(
       names = {"--target-custom-catalog-impl"},
@@ -110,31 +116,42 @@ public class CatalogMigrationCLI implements Callable<Integer> {
   String targetCustomCatalogImpl;
 
   @CommandLine.Option(
-      names = {"--delete-source-tables"},
+      names = {"-I", "--identifiers"},
+      split = ",",
       description =
-          "Optional configuration to delete the tables entry from source catalog after successfully registering it "
-              + "to target catalog.")
-  private boolean deleteSourceCatalogTables;
+          "optional selective list of identifiers to migrate. If not specified, all the tables will be migrated. "
+              + "Use this when there are few identifiers that need to be migrated. For a large number of identifiers, "
+              + "use the `--identifiers-from-file` or `--identifiers-regex` option.")
+  List<String> identifiers = new ArrayList<>();
 
-  @CommandLine.Parameters(
-      index = "0",
+  @CommandLine.Option(
+      names = {"--identifiers-from-file"},
       description =
-          "source catalog type. "
-              + "Can be one of these [CUSTOM, DYNAMODB, ECS, GLUE, HADOOP, HIVE, JDBC, NESSIE, REST]")
-  private CatalogType sourceCatalogType;
+          "optional text file path that contains a list of table identifiers (one per line) to migrate. Should not be "
+              + "used with `--identifiers` or `--identifiers-regex` option.")
+  String identifiersFromFile;
 
-  @CommandLine.Parameters(index = "1", split = ",", description = "source catalog properties")
-  private Map<String, String> sourceCatalogProperties;
-
-  @CommandLine.Parameters(
-      index = "2",
+  @CommandLine.Option(
+      names = {"--identifiers-regex"},
       description =
-          "target catalog type. "
-              + "Can be one of these [CUSTOM, DYNAMODB, ECS, GLUE, HADOOP, HIVE, JDBC, NESSIE, REST]")
-  private CatalogType targetCatalogType;
+          "optional regular expression pattern used to migrate only the tables whose identifiers match this pattern. "
+              + "Should not be used with `--identifiers` or '--identifiers-from-file' option.")
+  String identifiersRegEx;
 
-  @CommandLine.Parameters(index = "3", split = ",", description = "target catalog properties")
-  private Map<String, String> targetCatalogProperties;
+  @CommandLine.Option(
+      names = {"-T", "--thread-pool-size"},
+      defaultValue = "0",
+      description =
+          "optional size of the thread pool used for migrating tables. Tables are migrated sequentially if "
+              + "not specified.")
+  int maxThreadPoolSize;
+
+  @CommandLine.Option(
+      names = {"--dry-run"},
+      description =
+          "Optional configuration to simulate the migration without actually migrating. Can know a list of the tables "
+              + "that will be migrated by running this.")
+  private boolean isDryRun;
 
   public static void main(String... args) {
     CommandLine commandLine = new CommandLine(new CatalogMigrationCLI());
@@ -195,32 +212,26 @@ public class CatalogMigrationCLI implements Callable<Integer> {
       tableIdentifiers =
           identifiers.stream().map(TableIdentifier::parse).collect(Collectors.toList());
     }
+    // TODO: identifier regex validation and passing
+
+    // TODO: pass and handle dry-run
 
     ImmutablePair<Collection<TableIdentifier>, Collection<TableIdentifier>> result;
-    if (deleteSourceCatalogTables) {
-      result =
-          CatalogMigrateUtil.migrateTables(
-              tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, printWriter);
-      if (sourceCatalogType == CatalogType.HADOOP) {
-        printWriter.println(
-            "\n[WARNING]: Source catalog type is HADOOP and it doesn't support dropping tables just from "
-                + "catalog. \nAvoid operating the migrated tables from the source catalog after migration. "
-                + "Use the tables from target catalog.");
-      }
-    } else {
-      result =
-          CatalogMigrateUtil.registerTables(
-              tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, printWriter);
+    result =
+        CatalogMigrateUtil.migrateTables(
+            tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, printWriter);
+    if (sourceCatalogType == CatalogType.HADOOP) {
+      printWriter.println(
+          "\n[WARNING]: Source catalog type is HADOOP and it doesn't support dropping tables just from "
+              + "catalog. \nAvoid operating the migrated tables from the source catalog after migration. "
+              + "Use the tables from target catalog.");
     }
 
     printWriter.println("\nSummary: ");
     if (!result.left.isEmpty()) {
       printWriter.printf(
-          "- Successfully %s %d tables from %s catalog to %s catalog. \n",
-          deleteSourceCatalogTables ? "migrated" : "registered",
-          result.left.size(),
-          sourceCatalogType.name(),
-          targetCatalogType.name());
+          "- Successfully migrated %d tables from %s catalog to %s catalog. \n",
+          result.left.size(), sourceCatalogType.name(), targetCatalogType.name());
     }
     if (!result.right.isEmpty()) {
       List<String> failedIdentifiers =
@@ -231,26 +242,20 @@ public class CatalogMigrationCLI implements Callable<Integer> {
         throw new RuntimeException("Failed to write the file:", e);
       }
       printWriter.printf(
-          "- Failed to %s %d tables from %s catalog to %s catalog. "
+          "- Failed to migrate %d tables from %s catalog to %s catalog. "
               + "Please check the `catalog_migration.log` file for the failure reason. "
               + "\n Failed Identifiers are written to `failed_identifiers.txt`. "
               + "Retry with that file using `--identifiers-from-file` option "
               + "if the failure is because of network/connection timeouts.\n",
-          deleteSourceCatalogTables ? "migrate" : "register",
-          result.right.size(),
-          sourceCatalogType.name(),
-          targetCatalogType.name());
+          result.right.size(), sourceCatalogType.name(), targetCatalogType.name());
     }
     printWriter.println("\nDetails: ");
     if (!result.left.isEmpty()) {
-      printWriter.printf(
-          "- Successfully %s these tables: \n",
-          deleteSourceCatalogTables ? "migrated" : "registered");
+      printWriter.println("- Successfully migrated these tables:\n");
       printWriter.println(result.left);
     }
     if (!result.right.isEmpty()) {
-      printWriter.printf(
-          "- Failed to %s these tables: \n", deleteSourceCatalogTables ? "migrate" : "register");
+      printWriter.printf("- Failed to migrate these tables: \n");
       printWriter.println(result.right);
     }
 

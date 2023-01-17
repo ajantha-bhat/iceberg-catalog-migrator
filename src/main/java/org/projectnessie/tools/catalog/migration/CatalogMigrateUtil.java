@@ -76,36 +76,6 @@ public class CatalogMigrateUtil {
         tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, true, printWriter);
   }
 
-  /**
-   * Register tables from one catalog(source catalog) to another catalog(target catalog). User has
-   * to take care of deleting the tables from source catalog after registration.
-   *
-   * <p>Supports bulk registration with a multi-thread execution.
-   *
-   * <p>Users must make sure that no in-progress commits on the tables of source catalog during
-   * registration.
-   *
-   * @param tableIdentifiers a list of {@link TableIdentifier} for the tables required to be
-   *     registered. If not specified, all the tables would be registered
-   * @param sourceCatalog Source {@link Catalog} from which the tables are chosen
-   * @param targetCatalog Target {@link Catalog} to which the tables need to be registered
-   * @param maxThreadPoolSize Size of the thread pool used for registering tables (If set to 0, no
-   *     thread pool is used)
-   * @param printWriter to print regular updates on the console.
-   * @return Collection of successfully migrated and collection of failed to migrate table
-   *     identifiers.
-   */
-  public static ImmutablePair<Collection<TableIdentifier>, Collection<TableIdentifier>>
-      registerTables(
-          List<TableIdentifier> tableIdentifiers,
-          Catalog sourceCatalog,
-          Catalog targetCatalog,
-          int maxThreadPoolSize,
-          PrintWriter printWriter) {
-    return migrateTables(
-        tableIdentifiers, sourceCatalog, targetCatalog, maxThreadPoolSize, false, printWriter);
-  }
-
   private static ImmutablePair<Collection<TableIdentifier>, Collection<TableIdentifier>>
       migrateTables(
           List<TableIdentifier> tableIdentifiers,
