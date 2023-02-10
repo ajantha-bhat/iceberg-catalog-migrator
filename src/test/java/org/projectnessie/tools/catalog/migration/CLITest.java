@@ -18,7 +18,6 @@ package org.projectnessie.tools.catalog.migration;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.DRY_RUN_FILE;
 import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.FAILED_IDENTIFIERS_FILE;
-import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.FAILED_TO_DELETE_AT_SOURCE_FILE;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -60,6 +59,11 @@ public class CLITest {
   private static final Schema schema =
       new Schema(Types.StructType.of(required(1, "id", Types.LongType.get())).fields());
 
+  private static @TempDir File outputDir;
+
+  private static String dryRunFile;
+  private static String failedIdentifiersFile;
+
   @BeforeAll
   protected static void setup() {
     warehousePath1 = String.format("file://%s", warehouse1.getAbsolutePath());
@@ -72,6 +76,9 @@ public class CLITest {
     catalog2 = createCatalog(warehousePath2, "catalog2");
     ((HadoopCatalog) catalog2).createNamespace(Namespace.of("foo"), Collections.emptyMap());
     ((HadoopCatalog) catalog2).createNamespace(Namespace.of("bar"), Collections.emptyMap());
+
+    dryRunFile = outputDir.getAbsolutePath() + "/" + DRY_RUN_FILE;
+    failedIdentifiersFile = outputDir.getAbsolutePath() + "/" + FAILED_IDENTIFIERS_FILE;
   }
 
   @BeforeEach
@@ -101,9 +108,8 @@ public class CLITest {
               catalog1.listTables(namespace).forEach(catalog1::dropTable);
               catalog2.listTables(namespace).forEach(catalog2::dropTable);
             });
-    TestUtil.deleteFileIfExists(FAILED_IDENTIFIERS_FILE);
-    TestUtil.deleteFileIfExists(FAILED_TO_DELETE_AT_SOURCE_FILE);
-    TestUtil.deleteFileIfExists(DRY_RUN_FILE);
+    TestUtil.deleteFileIfExists(dryRunFile);
+    TestUtil.deleteFileIfExists(failedIdentifiersFile);
   }
 
   private static Catalog createCatalog(String warehousePath, String name) {
@@ -152,7 +158,9 @@ public class CLITest {
             "HADOOP",
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
-            "--delete-source-tables");
+            "--delete-source-tables",
+            "--output-dir",
+            outputDir.getAbsolutePath());
 
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     // note that keywords in output is "migrate" instead of "register".
@@ -192,7 +200,9 @@ public class CLITest {
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
             "--identifiers",
-            "bar.tbl-3");
+            "bar.tbl-3",
+            "--output-dir",
+            outputDir.getAbsolutePath());
 
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut())
@@ -223,7 +233,9 @@ public class CLITest {
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
             "--identifiers-from-file",
-            "ids.txt");
+            "ids.txt",
+            "--output-dir",
+            outputDir.getAbsolutePath());
     Files.delete(identifierFile);
 
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
@@ -255,7 +267,9 @@ public class CLITest {
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
             "--identifiers-regex",
-            "^foo\\..*");
+            "^foo\\..*",
+            "--output-dir",
+            outputDir.getAbsolutePath());
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut())
         .contains(
@@ -294,7 +308,9 @@ public class CLITest {
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
             "--identifiers",
-            "dummy.tbl-3");
+            "dummy.tbl-3",
+            "--output-dir",
+            outputDir.getAbsolutePath());
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut()).contains("Identified 1 tables for registration.");
     Assertions.assertThat(run.getOut())
@@ -316,7 +332,9 @@ public class CLITest {
         "--target-catalog-properties",
         "warehouse=" + warehousePath2 + ",type=hadoop",
         "--identifiers",
-        "foo.tbl-2");
+        "foo.tbl-2",
+        "--output-dir",
+        outputDir.getAbsolutePath());
     respondAsContinue();
     run =
         RunCLI.run(
@@ -329,7 +347,9 @@ public class CLITest {
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
             "--identifiers",
-            "foo.tbl-2");
+            "foo.tbl-2",
+            "--output-dir",
+            outputDir.getAbsolutePath());
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut()).contains("Identified 1 tables for registration.");
     Assertions.assertThat(run.getOut())
@@ -355,7 +375,9 @@ public class CLITest {
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
             "--identifiers",
-            "foo.tbl-2");
+            "foo.tbl-2",
+            "--output-dir",
+            outputDir.getAbsolutePath());
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut()).contains("Identified 1 tables for registration.");
     Assertions.assertThat(run.getOut())
@@ -375,7 +397,9 @@ public class CLITest {
             "--target-catalog-type",
             "HADOOP",
             "--target-catalog-properties",
-            "warehouse=" + warehousePath2 + ",type=hadoop");
+            "warehouse=" + warehousePath2 + ",type=hadoop",
+            "--output-dir",
+            outputDir.getAbsolutePath());
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut()).contains("Identified 4 tables for registration.");
     Assertions.assertThat(run.getOut())
@@ -410,7 +434,9 @@ public class CLITest {
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
             "--identifiers-from-file",
-            FAILED_IDENTIFIERS_FILE);
+            failedIdentifiersFile,
+            "--output-dir",
+            outputDir.getAbsolutePath());
     Assertions.assertThat(run.getOut())
         .contains(
             "Summary: \n"
@@ -421,8 +447,8 @@ public class CLITest {
                 + "if the failure is because of network/connection timeouts.");
     Assertions.assertThat(run.getOut())
         .contains("Details: \n" + "- Failed to register these tables:\n" + "[foo.tbl-2]");
-    Assertions.assertThat(new File(FAILED_IDENTIFIERS_FILE).exists()).isTrue();
-    Assertions.assertThat(Files.readAllLines(Paths.get(FAILED_IDENTIFIERS_FILE)))
+    Assertions.assertThat(new File(failedIdentifiersFile).exists()).isTrue();
+    Assertions.assertThat(Files.readAllLines(Paths.get(failedIdentifiersFile)))
         .containsExactly("foo.tbl-2");
   }
 
@@ -439,7 +465,9 @@ public class CLITest {
             "--target-catalog-type",
             "HADOOP",
             "--target-catalog-properties",
-            "warehouse=" + warehousePath1 + ",type=hadoop");
+            "warehouse=" + warehousePath1 + ",type=hadoop",
+            "--output-dir",
+            outputDir.getAbsolutePath());
 
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut()).contains("Identified 0 tables for registration.");
@@ -482,7 +510,9 @@ public class CLITest {
             "HADOOP",
             "--target-catalog-properties",
             "warehouse=" + warehousePath2 + ",type=hadoop",
-            "--dry-run");
+            "--dry-run",
+            "--output-dir",
+            outputDir.getAbsolutePath());
 
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     // should not prompt for dry run
@@ -498,8 +528,8 @@ public class CLITest {
                 + "You can use this file with `--identifiers-from-file` option.");
     Assertions.assertThat(run.getOut())
         .contains("Details: \n" + "- Identified these tables for registration by dry-run:\n");
-    Assertions.assertThat(new File(DRY_RUN_FILE).exists()).isTrue();
-    Assertions.assertThat(Files.readAllLines(Paths.get(DRY_RUN_FILE)))
+    Assertions.assertThat(new File(dryRunFile).exists()).isTrue();
+    Assertions.assertThat(Files.readAllLines(Paths.get(dryRunFile)))
         .containsExactlyInAnyOrder("foo.tbl-1", "foo.tbl-2", "bar.tbl-3", "bar.tbl-4");
   }
 
@@ -520,6 +550,8 @@ public class CLITest {
         "--target-catalog-type",
         "HADOOP",
         "--target-catalog-properties",
-        "warehouse=" + warehousePath2 + ",type=hadoop");
+        "warehouse=" + warehousePath2 + ",type=hadoop",
+        "--output-dir",
+        outputDir.getAbsolutePath());
   }
 }

@@ -151,6 +151,14 @@ public class CatalogMigrationCLI implements Callable<Integer> {
               + "to target catalog.")
   private boolean deleteSourceCatalogTables;
 
+  @CommandLine.Option(
+      names = {"--output-dir"},
+      description =
+          "optional local output directory path to write CLI output files like `failed_identifiers.txt`, "
+              + "`failed_to_delete_at_source.txt`, `dry_run_identifiers.txt`. "
+              + "Uses the present working directory if not specified.")
+  String outputDirPath;
+
   static final String FAILED_IDENTIFIERS_FILE = "failed_identifiers.txt";
   static final String FAILED_TO_DELETE_AT_SOURCE_FILE = "failed_to_delete_at_source.txt";
   static final String DRY_RUN_FILE = "dry_run_identifiers.txt";
@@ -348,13 +356,13 @@ public class CatalogMigrationCLI implements Callable<Integer> {
     printWriter.println(result.registeredTableIdentifiers());
   }
 
-  private static void writeToFile(String filePath, List<TableIdentifier> identifiers) {
+  private void writeToFile(String fileName, List<TableIdentifier> identifiers) {
     List<String> identifiersString =
         identifiers.stream().map(TableIdentifier::toString).collect(Collectors.toList());
     try {
-      Files.write(Paths.get(filePath), identifiersString);
+      Files.write(Paths.get(pathWithOutputDir(fileName)), identifiersString);
     } catch (IOException e) {
-      throw new RuntimeException("Failed to write the file:" + filePath, e);
+      throw new RuntimeException("Failed to write the file:" + fileName, e);
     }
   }
 
@@ -434,6 +442,16 @@ public class CatalogMigrationCLI implements Callable<Integer> {
         }
       }
     }
+  }
+
+  private String pathWithOutputDir(String fileName) {
+    if (outputDirPath == null) {
+      return fileName;
+    }
+    if (outputDirPath.endsWith("/")) {
+      return outputDirPath + fileName;
+    }
+    return outputDirPath + "/" + fileName;
   }
 
   private static String catalogImpl(CatalogType type, String customCatalogImpl) {

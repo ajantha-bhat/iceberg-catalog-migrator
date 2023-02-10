@@ -24,14 +24,13 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Order;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 public class CLIErrorsTest {
 
-  static Stream<Arguments> optionErrors() {
+  private static Stream<Arguments> optionErrors() {
     return Stream.of(
         // no arguments
         arguments(
@@ -82,123 +81,109 @@ public class CLIErrorsTest {
     Assertions.assertThat(run.getErr()).contains(expectedMessage);
   }
 
-  @Test
-  @Order(1)
-  public void testInvalidArgs() throws Exception {
-    RunCLI run =
-        RunCLI.run(
-            "--source-catalog-type",
-            "HADOOP",
-            "--source-catalog-properties",
-            "k1=v1,k2=v2",
-            "--target-catalog-type",
-            "HIVE",
-            "--target-catalog-properties",
-            "k3=v3, k4=v4");
-    Assertions.assertThat(run.getExitCode()).isEqualTo(1);
-    Assertions.assertThat(run.getErr())
-        .contains(
+  private static Stream<Arguments> invalidArgs() {
+    return Stream.of(
+        arguments(
+            Arrays.asList(
+                "--source-catalog-type",
+                "HADOOP",
+                "--source-catalog-properties",
+                "k1=v1,k2=v2",
+                "--target-catalog-type",
+                "HIVE",
+                "--target-catalog-properties",
+                "k3=v3, k4=v4"),
             "java.lang.IllegalArgumentException: Cannot initialize HadoopCatalog "
-                + "because warehousePath must not be null or empty");
-
-    run =
-        RunCLI.run(
-            "--source-catalog-type",
-            "HADOOP",
-            "--source-catalog-properties",
-            "k1=v1,k2=v2",
-            "--target-catalog-type",
-            "HIVE",
-            "--target-catalog-properties",
-            "k3=v3, k4=v4",
-            "--identifiers",
-            "foo.tbl",
-            "--identifiers-from-file",
-            "file.txt",
-            "--identifiers-regex",
-            "^foo\\.");
-    Assertions.assertThat(run.getExitCode()).isEqualTo(1);
-    Assertions.assertThat(run.getErr())
-        .contains(
+                + "because warehousePath must not be null or empty"),
+        arguments(
+            Arrays.asList(
+                "--source-catalog-type",
+                "HADOOP",
+                "--source-catalog-properties",
+                "k1=v1,k2=v2",
+                "--target-catalog-type",
+                "HIVE",
+                "--target-catalog-properties",
+                "k3=v3, k4=v4",
+                "--identifiers",
+                "foo.tbl",
+                "--identifiers-from-file",
+                "file.txt",
+                "--identifiers-regex",
+                "^foo\\."),
             "java.lang.IllegalArgumentException: All the three identifier options (`--identifiers`, "
-                + "`--identifiers-from-file`, `--identifiers-regex`) are configured. Please use only one of them.");
-
-    run =
-        RunCLI.run(
-            "--source-catalog-type",
-            "HADOOP",
-            "--source-catalog-properties",
-            "k1=v1,k2=v2",
-            "--target-catalog-type",
-            "HIVE",
-            "--target-catalog-properties",
-            "k3=v3, k4=v4",
-            "--identifiers-from-file",
-            "file.txt");
-    Assertions.assertThat(run.getExitCode()).isEqualTo(1);
-    Assertions.assertThat(run.getErr())
-        .contains(
+                + "`--identifiers-from-file`, `--identifiers-regex`) are configured. Please use only one of them."),
+        arguments(
+            Arrays.asList(
+                "--source-catalog-type",
+                "HADOOP",
+                "--source-catalog-properties",
+                "k1=v1,k2=v2",
+                "--target-catalog-type",
+                "HIVE",
+                "--target-catalog-properties",
+                "k3=v3, k4=v4",
+                "--identifiers-from-file",
+                "file.txt"),
             "java.lang.IllegalArgumentException: "
-                + "File specified in `--identifiers-from-file` option does not exist.");
-
-    run =
-        RunCLI.run(
-            "--source-catalog-type",
-            "HADOOP",
-            "--source-catalog-properties",
-            "k1=v1,k2=v2",
-            "--target-catalog-type",
-            "HIVE",
-            "--target-catalog-properties",
-            "k3=v3, k4=v4",
-            "--identifiers",
-            "foo.tbl",
-            "--identifiers-from-file",
-            "file.txt");
-    Assertions.assertThat(run.getExitCode()).isEqualTo(1);
-    Assertions.assertThat(run.getErr())
-        .contains(
+                + "File specified in `--identifiers-from-file` option does not exist."),
+        arguments(
+            Arrays.asList(
+                "--source-catalog-type",
+                "HADOOP",
+                "--source-catalog-properties",
+                "k1=v1,k2=v2",
+                "--target-catalog-type",
+                "HIVE",
+                "--target-catalog-properties",
+                "k3=v3, k4=v4",
+                "--identifiers",
+                "foo.tbl",
+                "--identifiers-from-file",
+                "file.txt"),
             "java.lang.IllegalArgumentException: Both `--identifiers` and `--identifiers-from-file` "
-                + "options are configured. Please use only one of them.");
-
-    run =
-        RunCLI.run(
-            "--source-catalog-type",
-            "HADOOP",
-            "--source-catalog-properties",
-            "k1=v1,k2=v2",
-            "--target-catalog-type",
-            "HIVE",
-            "--target-catalog-properties",
-            "k3=v3, k4=v4",
-            "--identifiers-regex",
-            "^foo\\.",
-            "--identifiers-from-file",
-            "file.txt");
-    Assertions.assertThat(run.getExitCode()).isEqualTo(1);
-    Assertions.assertThat(run.getErr())
-        .contains(
+                + "options are configured. Please use only one of them."),
+        arguments(
+            Arrays.asList(
+                "--source-catalog-type",
+                "HADOOP",
+                "--source-catalog-properties",
+                "k1=v1,k2=v2",
+                "--target-catalog-type",
+                "HIVE",
+                "--target-catalog-properties",
+                "k3=v3, k4=v4",
+                "--identifiers-regex",
+                "^foo\\.",
+                "--identifiers-from-file",
+                "file.txt"),
             "java.lang.IllegalArgumentException: Both `--identifiers-regex` "
-                + "and `--identifiers-from-file` options are configured. Please use only one of them.");
-
-    run =
-        RunCLI.run(
-            "--source-catalog-type",
-            "HADOOP",
-            "--source-catalog-properties",
-            "k1=v1,k2=v2",
-            "--target-catalog-type",
-            "HIVE",
-            "--target-catalog-properties",
-            "k3=v3, k4=v4",
-            "--identifiers",
-            "foo.tbl",
-            "--identifiers-regex",
-            "^foo\\.");
-    Assertions.assertThat(run.getExitCode()).isEqualTo(1);
-    Assertions.assertThat(run.getErr())
-        .contains(
+                + "and `--identifiers-from-file` options are configured. Please use only one of them."),
+        arguments(
+            Arrays.asList(
+                "--source-catalog-type",
+                "HADOOP",
+                "--source-catalog-properties",
+                "k1=v1,k2=v2",
+                "--target-catalog-type",
+                "HIVE",
+                "--target-catalog-properties",
+                "k3=v3, k4=v4",
+                "--identifiers",
+                "foo.tbl",
+                "--identifiers-regex",
+                "^foo\\."),
             "java.lang.IllegalArgumentException: Both `--identifiers-regex` and "
-                + "`--identifiers` options are configured. Please use only one of them.");
+                + "`--identifiers` options are configured. Please use only one of them."));
+  }
+
+  @ParameterizedTest
+  @Order(1)
+  @MethodSource("invalidArgs")
+  public void testInvalidArgs(List<String> args, String expectedMessage) throws Exception {
+    RunCLI run = RunCLI.run(args);
+
+    Assertions.assertThat(run.getExitCode()).isEqualTo(1);
+    Assertions.assertThat(run.getErr()).contains(expectedMessage);
   }
 }

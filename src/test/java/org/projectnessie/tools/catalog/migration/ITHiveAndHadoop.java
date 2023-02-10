@@ -18,7 +18,6 @@ package org.projectnessie.tools.catalog.migration;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.DRY_RUN_FILE;
 import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.FAILED_IDENTIFIERS_FILE;
-import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.FAILED_TO_DELETE_AT_SOURCE_FILE;
 
 import java.io.File;
 import java.util.Arrays;
@@ -33,7 +32,6 @@ import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.hadoop.HadoopCatalog;
-import org.apache.iceberg.hive.HiveMetastoreTest;
 import org.apache.iceberg.types.Types;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterAll;
@@ -44,7 +42,7 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-public class ITHiveAndHadoop extends HiveMetastoreTest {
+public class ITHiveAndHadoop {
 
   private static String warehousePath1;
 
@@ -58,10 +56,16 @@ public class ITHiveAndHadoop extends HiveMetastoreTest {
   private static final Schema schema =
       new Schema(Types.StructType.of(required(1, "id", Types.LongType.get())).fields());
 
+  private static @TempDir File outputDir;
+
+  private static String dryRunFile;
+  private static String failedIdentifiersFile;
+
   @BeforeAll
   protected static void setup() throws Exception {
-    startMetastore();
-    warehousePath1 = catalog.getConf().get("hive.metastore.warehouse.dir");
+    HiveMetaStoreRunner.startMetastore();
+    warehousePath1 =
+        HiveMetaStoreRunner.hiveCatalog().getConf().get("hive.metastore.warehouse.dir");
     warehousePath2 = String.format("file://%s", warehouse2.getAbsolutePath());
 
     catalog1 = createHadoopCatalog(warehousePath2, "catalog1");
@@ -69,14 +73,17 @@ public class ITHiveAndHadoop extends HiveMetastoreTest {
     ((SupportsNamespaces) catalog1).createNamespace(Namespace.of("bar"), Collections.emptyMap());
 
     // assign to hive catalog from the parent class
-    catalog2 = catalog;
+    catalog2 = HiveMetaStoreRunner.hiveCatalog();
     ((SupportsNamespaces) catalog2).createNamespace(Namespace.of("foo"), Collections.emptyMap());
     ((SupportsNamespaces) catalog2).createNamespace(Namespace.of("bar"), Collections.emptyMap());
+
+    dryRunFile = outputDir.getAbsolutePath() + "/" + DRY_RUN_FILE;
+    failedIdentifiersFile = outputDir.getAbsolutePath() + "/" + FAILED_IDENTIFIERS_FILE;
   }
 
   @AfterAll
   protected static void tearDown() throws Exception {
-    stopMetastore();
+    HiveMetaStoreRunner.stopMetastore();
   }
 
   @BeforeEach
@@ -100,9 +107,8 @@ public class ITHiveAndHadoop extends HiveMetastoreTest {
               catalog1.listTables(namespace).forEach(catalog1::dropTable);
               catalog2.listTables(namespace).forEach(catalog2::dropTable);
             });
-    TestUtil.deleteFileIfExists(FAILED_IDENTIFIERS_FILE);
-    TestUtil.deleteFileIfExists(FAILED_TO_DELETE_AT_SOURCE_FILE);
-    TestUtil.deleteFileIfExists(DRY_RUN_FILE);
+    TestUtil.deleteFileIfExists(dryRunFile);
+    TestUtil.deleteFileIfExists(failedIdentifiersFile);
   }
 
   private static Catalog createHadoopCatalog(String warehousePath, String name) {
@@ -126,7 +132,10 @@ public class ITHiveAndHadoop extends HiveMetastoreTest {
             "--target-catalog-type",
             "HIVE",
             "--target-catalog-properties",
-            "warehouse=" + warehousePath1 + ",uri=" + catalog.getConf().get("hive.metastore.uris"));
+            "warehouse="
+                + warehousePath1
+                + ",uri="
+                + HiveMetaStoreRunner.hiveCatalog().getConf().get("hive.metastore.uris"));
 
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
     Assertions.assertThat(run.getOut())
@@ -159,7 +168,10 @@ public class ITHiveAndHadoop extends HiveMetastoreTest {
             "--source-catalog-type",
             "HIVE",
             "--source-catalog-properties",
-            "warehouse=" + warehousePath1 + ",uri=" + catalog.getConf().get("hive.metastore.uris"),
+            "warehouse="
+                + warehousePath1
+                + ",uri="
+                + HiveMetaStoreRunner.hiveCatalog().getConf().get("hive.metastore.uris"),
             "--target-catalog-type",
             "HADOOP",
             "--target-catalog-properties",

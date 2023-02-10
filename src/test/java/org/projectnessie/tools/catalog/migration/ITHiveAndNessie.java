@@ -18,7 +18,6 @@ package org.projectnessie.tools.catalog.migration;
 import static org.apache.iceberg.types.Types.NestedField.required;
 import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.DRY_RUN_FILE;
 import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.FAILED_IDENTIFIERS_FILE;
-import static org.projectnessie.tools.catalog.migration.CatalogMigrationCLI.FAILED_TO_DELETE_AT_SOURCE_FILE;
 
 import java.io.File;
 import java.util.Arrays;
@@ -32,7 +31,6 @@ import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.hive.HiveMetastoreTest;
 import org.apache.iceberg.nessie.NessieCatalog;
 import org.apache.iceberg.types.Types;
 import org.assertj.core.api.Assertions;
@@ -45,7 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.GenericContainer;
 
-public class ITHiveAndNessie extends HiveMetastoreTest {
+public class ITHiveAndNessie {
 
   private static String warehousePath1;
 
@@ -66,10 +64,16 @@ public class ITHiveAndNessie extends HiveMetastoreTest {
 
   private static GenericContainer<?> container;
 
+  private static @TempDir File outputDir;
+
+  private static String dryRunFile;
+  private static String failedIdentifiersFile;
+
   @BeforeAll
   protected static void setup() throws Exception {
-    startMetastore();
-    warehousePath1 = catalog.getConf().get("hive.metastore.warehouse.dir");
+    HiveMetaStoreRunner.startMetastore();
+    warehousePath1 =
+        HiveMetaStoreRunner.hiveCatalog().getConf().get("hive.metastore.warehouse.dir");
     warehousePath2 = String.format("file://%s", warehouse2.getAbsolutePath());
 
     container =
@@ -84,18 +88,21 @@ public class ITHiveAndNessie extends HiveMetastoreTest {
             "http://%s:%s/api/v1", container.getHost(), container.getMappedPort(NESSIE_PORT));
 
     // assign to hive catalog from the parent class
-    catalog1 = catalog;
+    catalog1 = HiveMetaStoreRunner.hiveCatalog();
     ((SupportsNamespaces) catalog1).createNamespace(Namespace.of("foo"), Collections.emptyMap());
     ((SupportsNamespaces) catalog1).createNamespace(Namespace.of("bar"), Collections.emptyMap());
 
     catalog2 = createNessieCatalog(warehousePath2, nessieUri);
     ((SupportsNamespaces) catalog2).createNamespace(Namespace.of("foo"), Collections.emptyMap());
     ((SupportsNamespaces) catalog2).createNamespace(Namespace.of("bar"), Collections.emptyMap());
+
+    dryRunFile = outputDir.getAbsolutePath() + "/" + DRY_RUN_FILE;
+    failedIdentifiersFile = outputDir.getAbsolutePath() + "/" + FAILED_IDENTIFIERS_FILE;
   }
 
   @AfterAll
   protected static void tearDown() throws Exception {
-    stopMetastore();
+    HiveMetaStoreRunner.stopMetastore();
     container.stop();
   }
 
@@ -120,9 +127,8 @@ public class ITHiveAndNessie extends HiveMetastoreTest {
               catalog1.listTables(namespace).forEach(catalog1::dropTable);
               catalog2.listTables(namespace).forEach(catalog2::dropTable);
             });
-    TestUtil.deleteFileIfExists(FAILED_IDENTIFIERS_FILE);
-    TestUtil.deleteFileIfExists(FAILED_TO_DELETE_AT_SOURCE_FILE);
-    TestUtil.deleteFileIfExists(DRY_RUN_FILE);
+    TestUtil.deleteFileIfExists(dryRunFile);
+    TestUtil.deleteFileIfExists(failedIdentifiersFile);
   }
 
   private static Catalog createNessieCatalog(String warehousePath, String uri) {
@@ -143,7 +149,10 @@ public class ITHiveAndNessie extends HiveMetastoreTest {
             "--source-catalog-type",
             "HIVE",
             "--source-catalog-properties",
-            "warehouse=" + warehousePath1 + ",uri=" + catalog.getConf().get("hive.metastore.uris"),
+            "warehouse="
+                + warehousePath1
+                + ",uri="
+                + HiveMetaStoreRunner.hiveCatalog().getConf().get("hive.metastore.uris"),
             "--target-catalog-type",
             "NESSIE",
             "--target-catalog-properties",
@@ -187,7 +196,10 @@ public class ITHiveAndNessie extends HiveMetastoreTest {
             "--target-catalog-type",
             "HIVE",
             "--target-catalog-properties",
-            "warehouse=" + warehousePath1 + ",uri=" + catalog.getConf().get("hive.metastore.uris"),
+            "warehouse="
+                + warehousePath1
+                + ",uri="
+                + HiveMetaStoreRunner.hiveCatalog().getConf().get("hive.metastore.uris"),
             "--delete-source-tables");
 
     Assertions.assertThat(run.getExitCode()).isEqualTo(0);
