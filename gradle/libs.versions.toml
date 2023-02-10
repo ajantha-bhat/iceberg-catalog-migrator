@@ -8,7 +8,9 @@ hive = "2.3.8"
 iceberg = "1.1.0"
 junit = "5.9.1"
 logback = "1.2.11"
+nessie = "0.48.2"
 nessieBuildPlugins = "0.2.14"
+nessieRunner = "0.28.1"
 picocli = "4.7.0"
 shadowPlugin = "7.1.2"
 slf4j = "1.7.36"
@@ -36,5 +38,6 @@ test-containers = { module = "org.testcontainers:testcontainers", version.ref = 
 
 [plugins]
 nessie-build-spotless = { id = "org.projectnessie.buildsupport.spotless", version.ref = "nessieBuildPlugins" }
+nessie-run = { id = "org.projectnessie", version.ref = "nessieRunner" }
 shadow = { id = "com.github.johnrengelman.shadow", version.ref = "shadowPlugin" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotlessPlugin" }

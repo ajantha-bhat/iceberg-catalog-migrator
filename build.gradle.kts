@@ -22,6 +22,7 @@ plugins {
   `maven-publish`
   id("com.diffplug.spotless")
   id("com.github.johnrengelman.shadow")
+  alias(libs.plugins.nessie.run)
   Utilities
 }
 
@@ -87,6 +88,8 @@ dependencies {
   }
   testImplementation("org.apache.hadoop:hadoop-mapreduce-client-core:${libs.versions.hadoop.get()}")
   testImplementation(libs.test.containers)
+
+  nessieQuarkusServer(nessieQuarkusServerRunner())
 }
 
 group = "org.projectnessie"
@@ -199,4 +202,18 @@ fun Project.testTasks() {
   }
 }
 
+nessieQuarkusApp {
+  includeTask(tasks.named<Test>("intTest"))
+  environmentNonInput.put("HTTP_ACCESS_LOG_LEVEL", testLogLevel())
+}
+
 fun testLogLevel() = System.getProperty("test.log.level", "WARN")
+
+fun DependencyHandlerScope.nessieQuarkusServerRunner(): ModuleDependency {
+  return module(
+    "org.projectnessie",
+    "nessie-quarkus",
+    version = libs.versions.nessie.get(),
+    configuration = "quarkusRunner"
+  )
+}
