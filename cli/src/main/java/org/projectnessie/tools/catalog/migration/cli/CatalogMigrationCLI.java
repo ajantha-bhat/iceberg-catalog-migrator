@@ -16,7 +16,6 @@
 package org.projectnessie.tools.catalog.migration.cli;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -161,21 +160,19 @@ public class CatalogMigrationCLI implements Callable<Integer> {
               + "Uses the present working directory if not specified.")
   private String outputDirPath;
 
-  private final InputStream input;
+  private boolean disablePrompts = false;
 
-  public CatalogMigrationCLI(InputStream input) {
-    this.input = input;
-  }
+  public CatalogMigrationCLI() {}
 
   public static void main(String... args) {
-    runWithInput(System.in, args);
-  }
-
-  public static void runWithInput(InputStream input, String... args) {
-    CommandLine commandLine = new CommandLine(new CatalogMigrationCLI(input));
+    CommandLine commandLine = new CommandLine(new CatalogMigrationCLI());
     commandLine.setUsageHelpWidth(150);
     int exitCode = commandLine.execute(args);
     System.exit(exitCode);
+  }
+
+  public void disablePrompts() {
+    this.disablePrompts = true;
   }
 
   @Override
@@ -225,13 +222,13 @@ public class CatalogMigrationCLI implements Callable<Integer> {
           identifiers.stream().map(TableIdentifier::parse).collect(Collectors.toList());
     }
 
-    if (!isDryRun) {
+    if (!isDryRun && !disablePrompts) {
       if (deleteSourceCatalogTables) {
-        if (!PromptUtil.proceedForMigration(input, printWriter)) {
+        if (!PromptUtil.proceedForMigration(printWriter)) {
           return 0;
         }
       } else {
-        if (!PromptUtil.proceedForRegistration(input, printWriter)) {
+        if (!PromptUtil.proceedForRegistration(printWriter)) {
           return 0;
         }
       }

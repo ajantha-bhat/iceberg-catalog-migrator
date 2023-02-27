@@ -16,7 +16,6 @@
 package org.projectnessie.tools.catlog.migration.cli;
 
 import com.google.common.collect.Lists;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -547,17 +546,12 @@ public abstract class AbstractCLIMigrationTest extends AbstractTest {
 
   private static RunCLI registerTablesCLI(boolean deleteSourceTables, String... args)
       throws Exception {
-    ByteArrayInputStream input = new ByteArrayInputStream("yes\n".getBytes());
-    try {
-      if (!deleteSourceTables) {
-        return RunCLI.runWithInput(input, args);
-      }
-      List<String> argsList = Lists.newArrayList(args);
-      argsList.add("--delete-source-tables");
-      return RunCLI.runWithInput(input, argsList.toArray(new String[0]));
-    } finally {
-      input.close();
+    if (!deleteSourceTables) {
+      return RunCLI.run(args);
     }
+    List<String> argsList = Lists.newArrayList(args);
+    argsList.add("--delete-source-tables");
+    return RunCLI.run(argsList.toArray(new String[0]));
   }
 
   protected static String catalogType(Catalog catalog) {
