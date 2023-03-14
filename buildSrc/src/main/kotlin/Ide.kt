@@ -43,6 +43,17 @@ fun Project.configureIde() {
         name = ideName
         isDownloadSources = true // this is the default BTW
         inheritOutputDirs = true
+        val buildToolsIT = projectDir.resolve("build-tools-integration-tests")
+        excludeDirs =
+          excludeDirs +
+            setOf(
+              // Do not index the .mvn folders
+              projectDir.resolve(".mvn"),
+              // And more...
+              buildToolsIT.resolve(".gradle"),
+              buildToolsIT.resolve("build"),
+              buildToolsIT.resolve("target")
+            )
       }
 
       project.settings {

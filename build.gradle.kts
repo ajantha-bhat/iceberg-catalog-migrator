@@ -14,7 +14,72 @@
  * limitations under the License.
  */
 
-plugins { `build-conventions` }
+plugins {
+  `maven-publish`
+  signing
+  `build-conventions`
+  alias(libs.plugins.nexus.publish.plugin)
+}
+
+apply<ReleaseSupportPlugin>()
+
+extra["maven.name"] = "Iceberg-Catalog-Migrator"
+
+description = "A tool to bulk migrate iceberg tables from one catalog to another"
+
+publishingHelper {
+  nessieRepoName.set("iceberg-catalog-migrator")
+  inceptionYear.set("2023")
+}
+
+// Pass environment variables:
+//    ORG_GRADLE_PROJECT_sonatypeUsername
+//    ORG_GRADLE_PROJECT_sonatypePassword
+// OR in ~/.gradle/gradle.properties set
+//    sonatypeUsername
+//    sonatypePassword
+// Call targets:
+//    publishToSonatype
+//    closeAndReleaseSonatypeStagingRepository
+nexusPublishing {
+  transitionCheckOptions {
+    // default==60 (10 minutes), wait up to 60 minutes
+    maxRetries.set(360)
+    // default 10s
+    delayBetween.set(java.time.Duration.ofSeconds(10))
+  }
+  repositories { sonatype() }
+}
+
+val buildToolIntegrationGradle by
+  tasks.creating(Exec::class) {
+    group = "Verification"
+    description =
+      "Checks whether bom works fine with Gradle, requires preceding publishToMavenLocal in a separate Gradle invocation"
+
+    workingDir = file("build-tools-integration-tests")
+    commandLine("./gradlew", "jar", "-Dcli.version=${project.version}")
+  }
+
+val buildToolIntegrationMaven by
+  tasks.creating(Exec::class) {
+    group = "Verification"
+    description =
+      "Checks whether bom works fine with Maven, requires preceding publishToMavenLocal in a separate Maven invocation"
+
+    workingDir = file("build-tools-integration-tests")
+    commandLine("./mvnw", "clean", "package", "-Dcli.version=${project.version}")
+  }
+
+val buildToolIntegrations by
+  tasks.creating {
+    group = "Verification"
+    description =
+      "Checks whether bom works fine with build tools, requires preceding publishToMavenLocal in a separate Gradle invocation"
+
+    dependsOn(buildToolIntegrationGradle)
+    dependsOn(buildToolIntegrationMaven)
+  }
 
 spotless {
   kotlinGradle {
